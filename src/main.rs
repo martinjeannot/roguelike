@@ -4,7 +4,7 @@ mod player;
 mod rect;
 
 use crate::components::{Player, Position, Renderable};
-use crate::map::{draw_map, new_map_rooms_and_corridors, TileType};
+use crate::map::Map;
 use crate::player::handle_player_input;
 use bracket_lib::prelude::*;
 use specs::prelude::*;
@@ -31,8 +31,8 @@ impl GameState for State {
         self.run_systems();
 
         // ### 3. RENDERING
-        let map = self.ecs.fetch::<Vec<TileType>>();
-        draw_map(&map, ctx);
+        let map = self.ecs.fetch::<Map>();
+        map.draw(ctx);
 
         let positions = self.ecs.read_storage::<Position>();
         let renderables = self.ecs.read_storage::<Renderable>();
@@ -56,7 +56,8 @@ fn main() -> BError {
     let mut game_state = State { ecs: World::new() };
 
     // ### Map creation
-    let (rooms, map) = new_map_rooms_and_corridors();
+    let map = Map::new(80, 50);
+    let (player_x, player_y) = map.rooms[0].center();
     game_state.ecs.insert(map);
 
     // ### Components registration
@@ -67,7 +68,6 @@ fn main() -> BError {
     // ### Entity creation
 
     // player creation
-    let (player_x, player_y) = rooms[0].center();
     game_state
         .ecs
         .create_entity()
