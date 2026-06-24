@@ -1,6 +1,6 @@
 use crate::rect::Rect;
 use bracket_lib::color::{BLACK, RGB};
-use bracket_lib::prelude::{to_cp437, BTerm, RandomNumberGenerator};
+use bracket_lib::prelude::*;
 use std::cmp::{max, min};
 
 #[derive(PartialEq, Copy, Clone)]
@@ -14,6 +14,8 @@ pub struct Map {
     pub rooms: Vec<Rect>,
     pub width: i32,
     pub height: i32,
+    pub revealed_tiles: Vec<bool>,
+    pub visible_tiles: Vec<bool>,
 }
 
 impl Map {
@@ -23,6 +25,8 @@ impl Map {
             rooms: Vec::new(),
             width,
             height,
+            revealed_tiles: vec![false; (width * height) as usize],
+            visible_tiles: vec![false; (width * height) as usize],
         };
 
         const MAX_ROOMS: i32 = 30;
@@ -94,25 +98,31 @@ impl Map {
     }
 
     pub fn draw(&self, ctx: &mut BTerm) {
-        for (i, tile) in self.tiles.iter().enumerate() {
-            let x = (i % self.width as usize) as i32;
-            let y = (i / self.width as usize) as i32;
-            match tile {
-                TileType::Floor => ctx.set(
-                    x,
-                    y,
-                    RGB::from_f32(0.5, 0.5, 0.5),
-                    RGB::named(BLACK),
-                    to_cp437('.'),
-                ),
-                TileType::Wall => ctx.set(
-                    x,
-                    y,
-                    RGB::from_f32(0., 1., 0.),
-                    RGB::named(BLACK),
-                    to_cp437('#'),
-                ),
+        for (idx, tile) in self.tiles.iter().enumerate() {
+            let x = (idx % self.width as usize) as i32;
+            let y = (idx / self.width as usize) as i32;
+            if self.revealed_tiles[idx] {
+                let (mut fg, glyph) = match tile {
+                    TileType::Floor => (RGB::from_f32(0., 0.5, 0.5), to_cp437('.')),
+                    TileType::Wall => (RGB::from_f32(0., 1., 0.), to_cp437('#')),
+                };
+                if !self.visible_tiles[idx] {
+                    fg = fg.to_greyscale();
+                }
+                ctx.set(x, y, fg, RGB::named(BLACK), glyph);
             }
         }
+    }
+}
+
+impl Algorithm2D for Map {
+    fn dimensions(&self) -> Point {
+        Point::new(self.width, self.height)
+    }
+}
+
+impl BaseMap for Map {
+    fn is_opaque(&self, idx: usize) -> bool {
+        self.tiles[idx] == TileType::Wall
     }
 }

@@ -2,10 +2,12 @@ mod components;
 mod map;
 mod player;
 mod rect;
+mod visibility_system;
 
-use crate::components::{Player, Position, Renderable};
+use crate::components::{Player, Position, Renderable, Viewshed};
 use crate::map::Map;
 use crate::player::handle_player_input;
+use crate::visibility_system::VisibilitySystem;
 use bracket_lib::prelude::*;
 use specs::prelude::*;
 
@@ -14,7 +16,10 @@ struct State {
 }
 
 impl State {
+    /// Run all registered systems.
     fn run_systems(&mut self) {
+        let mut visibility_system = VisibilitySystem {};
+        visibility_system.run_now(&self.ecs);
         self.ecs.maintain();
     }
 }
@@ -27,7 +32,6 @@ impl GameState for State {
         handle_player_input(self, ctx);
 
         // ### 2. SYSTEMS
-        // run all registered systems
         self.run_systems();
 
         // ### 3. RENDERING
@@ -63,11 +67,12 @@ fn main() -> BError {
     // ### Components registration
     game_state.ecs.register::<Position>();
     game_state.ecs.register::<Renderable>();
+    game_state.ecs.register::<Viewshed>();
     game_state.ecs.register::<Player>();
 
-    // ### Entity creation
+    // ### Entity initialization
 
-    // player creation
+    // player initialization
     game_state
         .ecs
         .create_entity()
@@ -79,6 +84,11 @@ fn main() -> BError {
             glyph: to_cp437('@'),
             fg: RGB::named(YELLOW),
             bg: RGB::named(BLACK),
+        })
+        .with(Viewshed {
+            visible_tiles: Vec::new(),
+            range: 8,
+            dirty: true,
         })
         .with(Player)
         .build();
