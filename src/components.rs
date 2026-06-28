@@ -30,3 +30,41 @@ pub struct Monster;
 
 #[derive(Component, Debug)]
 pub struct Name(pub String);
+
+#[derive(Component, Debug)]
+pub struct TileBlocking;
+
+#[derive(Component, Debug)]
+pub struct CombatStats {
+    pub max_hp: i32,
+    pub hp: i32,
+    pub defense: i32,
+    pub power: i32,
+}
+
+#[derive(Component, Debug)]
+pub struct DamageDealer {
+    pub target: Entity,
+}
+
+#[derive(Component, Debug)]
+pub struct DamageTaker {
+    pub amount: Vec<i32>,
+}
+
+impl DamageTaker {
+    pub fn take_damage(storage: &mut WriteStorage<DamageTaker>, target: Entity, amount: i32) {
+        if let Some(damage_taker) = storage.get_mut(target) {
+            damage_taker.amount.push(amount);
+        } else {
+            storage
+                .insert(
+                    target,
+                    DamageTaker {
+                        amount: vec![amount],
+                    },
+                )
+                .expect("Unable to insert damage");
+        }
+    }
+}

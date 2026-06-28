@@ -1,11 +1,14 @@
 mod components;
+mod damage_system;
 mod map;
+mod map_indexing_system;
+mod melee_combat_system;
 mod monster_ai_system;
 mod player;
 mod rect;
 mod visibility_system;
 
-use crate::components::{Monster, Name, Player, Position, Renderable, Viewshed};
+use crate::components::*;
 use crate::map::Map;
 use crate::monster_ai_system::MonsterAI;
 use crate::player::{handle_player_input, PlayerPosition};
@@ -15,22 +18,37 @@ use specs::prelude::*;
 
 struct State {
     ecs: World,
-    run_state: RunState,
 }
 
-enum RunState {
-    Paused,
-    Running,
+#[derive(PartialEq, Copy, Clone)]
+pub enum RunState {
+    AwaitingInput,
+    PreRun,
+    PlayerTurn,
+    MonsterTurn,
 }
 
 impl State {
     /// Run all registered systems.
+    ///
+    /// Order matters here, for example the MapIndexingSystem must run after the MonsterAI system,
+    /// because the latter may move monsters around the map, and the former needs to update the
+    /// map's blocked tiles and tile contents accordingly.
     fn run_systems(&mut self) {
-        let mut visibility_system = VisibilitySystem {};
+        let mut visibility_system = VisibilitySystem;
         visibility_system.run_now(&self.ecs);
 
-        let mut monster_ai = MonsterAI {};
+        let mut monster_ai = MonsterAI;
         monster_ai.run_now(&self.ecs);
+
+        let mut map_indexing_system = map_indexing_system::MapIndexingSystem;
+        map_indexing_system.run_now(&self.ecs);
+
+        let mut melee_combat_system = melee_combat_system::MeleeCombatSystem;
+        melee_combat_system.run_now(&self.ecs);
+
+        let mut damage_system = damage_system::DamageSystem;
+        damage_system.run_now(&self.ecs);
 
         self.ecs.maintain();
     }
@@ -40,13 +58,34 @@ impl GameState for State {
     fn tick(&mut self, ctx: &mut BTerm) {
         ctx.cls(); // clear screen
 
-        self.run_state = match self.run_state {
-            RunState::Paused => handle_player_input(self, ctx),
-            RunState::Running => {
+        let local_run_state;
+        {
+            let run_state = self.ecs.fetch::<RunState>();
+            local_run_state = *run_state;
+        }
+
+        let next_run_state = match local_run_state {
+            RunState::PreRun => {
                 self.run_systems();
-                RunState::Paused
+                RunState::AwaitingInput
+            }
+            RunState::AwaitingInput => handle_player_input(self, ctx),
+            RunState::PlayerTurn => {
+                self.run_systems();
+                RunState::MonsterTurn
+            }
+            RunState::MonsterTurn => {
+                self.run_systems();
+                RunState::AwaitingInput
             }
         };
+        // update the RunState resource
+        {
+            let mut run_state_writer = self.ecs.write_resource::<RunState>();
+            *run_state_writer = next_run_state;
+        }
+
+        damage_system::remove_corpses(&mut self.ecs);
 
         // ### RENDERING
         let map = self.ecs.fetch::<Map>();
@@ -74,10 +113,7 @@ fn main() -> BError {
     let context = BTermBuilder::simple80x50().with_title("Rogue").build()?;
 
     // ### Game state creation
-    let mut game_state = State {
-        ecs: World::new(),
-        run_state: RunState::Running,
-    };
+    let mut game_state = State { ecs: World::new() };
 
     // ### Map creation
     let map = Map::new(80, 50);
@@ -91,13 +127,18 @@ fn main() -> BError {
     game_state.ecs.register::<Player>();
     game_state.ecs.register::<Monster>();
     game_state.ecs.register::<Name>();
+    game_state.ecs.register::<TileBlocking>();
+    game_state.ecs.register::<CombatStats>();
+    game_state.ecs.register::<DamageDealer>();
+    game_state.ecs.register::<DamageTaker>();
 
     // ### Entity initialization
 
+    game_state.ecs.insert(RunState::PreRun);
     let mut rng = RandomNumberGenerator::new();
 
     // player initialization
-    game_state
+    let player_entity = game_state
         .ecs
         .create_entity()
         .with(Position {
@@ -115,7 +156,15 @@ fn main() -> BError {
             dirty: true,
         })
         .with(Player)
+        .with(Name("Player".to_string()))
+        .with(CombatStats {
+            max_hp: 30,
+            hp: 30,
+            defense: 2,
+            power: 5,
+        })
         .build();
+    game_state.ecs.insert(player_entity);
     // additionally, we add the player position as a resource
     game_state.ecs.insert(PlayerPosition {
         x: room_centers[0].0,
@@ -123,10 +172,10 @@ fn main() -> BError {
     });
 
     // monsters initialization
-    for room_center in room_centers.iter().skip(1) {
+    for (i, room_center) in room_centers.iter().skip(1).enumerate() {
         let (glyph, name) = match rng.roll_dice(1, 2) {
-            1 => (to_cp437('g'), "Goblin"),
-            _ => (to_cp437('o'), "Orc"),
+            1 => (to_cp437('g'), format!("Goblin #{i}")),
+            _ => (to_cp437('o'), format!("Orc #{i}")),
         };
 
         game_state
@@ -148,6 +197,13 @@ fn main() -> BError {
             })
             .with(Monster)
             .with(Name(name.to_owned()))
+            .with(TileBlocking)
+            .with(CombatStats {
+                max_hp: 16,
+                hp: 16,
+                defense: 1,
+                power: 4,
+            })
             .build();
     }
 
