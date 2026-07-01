@@ -124,6 +124,7 @@ fn main() -> BError {
     game_state.ecs.register::<Position>();
     game_state.ecs.register::<Renderable>();
     game_state.ecs.register::<Viewshed>();
+    game_state.ecs.register::<Chasing>();
     game_state.ecs.register::<Player>();
     game_state.ecs.register::<Monster>();
     game_state.ecs.register::<Name>();
@@ -195,6 +196,7 @@ fn main() -> BError {
                 range: 8,
                 dirty: true,
             })
+            .with(Chasing { target: None })
             .with(Monster)
             .with(Name(name.to_owned()))
             .with(TileBlocking)

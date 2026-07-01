@@ -23,6 +23,11 @@ pub struct Viewshed {
 }
 
 #[derive(Component, Debug)]
+pub struct Chasing {
+    pub target: Option<Point>,
+}
+
+#[derive(Component, Debug)]
 pub struct Player;
 
 #[derive(Component, Debug)]
